@@ -1,5 +1,4 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { ArrowRight, FileText } from 'lucide-react';
 
 const heroRoom = '/assets/hero.png';
@@ -79,13 +78,14 @@ export const HeroSection: React.FC<HeroSectionProps> = () => {
               Explore my work
               <ArrowRight className="h-4 w-4" />
             </button>
-            <Link
-              to="/resume"
+            <a
+              href="/assets/Abhinand_Krishna_R_CV.pdf"
+              download="Abhinand_Krishna_R_CV.pdf"
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/5 backdrop-blur-sm px-6 py-3 text-[14px] font-medium text-neutral-300 transition-colors duration-200 hover:bg-white/10 hover:text-white"
             >
               <FileText className="h-4 w-4" />
               Resume
-            </Link>
+            </a>
           </div>
         </div>
       </div>

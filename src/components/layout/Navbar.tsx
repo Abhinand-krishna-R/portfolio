@@ -62,6 +62,7 @@ export const Navbar: React.FC<NavbarProps> = () => {
     { label: 'Contact', path: '/#contact' },
   ];
 
+
   const handleLinkClick = (e: any, path: string) => {
     if (path.startsWith('/#')) {
       const elementId = path.split('#')[1];
@@ -113,12 +114,6 @@ export const Navbar: React.FC<NavbarProps> = () => {
             {item.label}
           </NavLink>
         ))}
-        <NavLink
-          to="/#contact"
-          onClick={(e) => handleLinkClick(e, '/#contact')}
-        >
-          Let's talk
-        </NavLink>
       </nav>
 
       <button

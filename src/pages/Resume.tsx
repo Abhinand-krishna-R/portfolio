@@ -25,9 +25,18 @@ export const Resume: React.FC = () => {
             BACK TO CONSOLE
           </Link>
           
-          <Button onClick={handlePrint} variant="primary" size="sm" icon={<Printer className="w-3.5 h-3.5" />}>
-            Print CV / Save PDF
-          </Button>
+          <div className="flex items-center gap-2">
+            <a
+              href="/assets/Abhinand_Krishna_R_CV.pdf"
+              download="Abhinand_Krishna_R_CV.pdf"
+              className="inline-flex items-center gap-1.5 rounded-md bg-[#9F7AEA] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#8B5CF6] transition-colors"
+            >
+              Download PDF
+            </a>
+            <Button onClick={handlePrint} variant="secondary" size="sm" icon={<Printer className="w-3.5 h-3.5" />}>
+              Print
+            </Button>
+          </div>
         </Container>
       </div>
 
