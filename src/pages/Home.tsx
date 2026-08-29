@@ -83,9 +83,14 @@ export const Home: React.FC<HomeProps> = ({ pageReady = true }) => {
           </div>
 
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button to="/resume" variant="primary" icon={<FileText className="h-4 w-4" />}>
-              Resume
-            </Button>
+            <a
+              href="/assets/Abhinand_Krishna_R_CV.pdf"
+              download="Abhinand_Krishna_R_CV.pdf"
+              className="inline-flex items-center gap-2 rounded-lg bg-[#9F7AEA] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#8B5CF6] transition-colors"
+            >
+              <FileText className="h-4 w-4" />
+              Download Resume
+            </a>
             <Button href={socials.linkedin} variant="secondary" icon={<LinkedinIcon className="h-4 w-4" />}>
               LinkedIn
             </Button>

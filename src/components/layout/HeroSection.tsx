@@ -8,17 +8,6 @@ interface HeroSectionProps {
 }
 
 export const HeroSection: React.FC<HeroSectionProps> = () => {
-  const scrollToProjects = () => {
-    const element = document.getElementById('projects');
-    if (element) {
-      const navHeight = 84;
-      const elementPosition = element.getBoundingClientRect().top + window.scrollY;
-      window.scrollTo({
-        top: elementPosition - navHeight,
-        behavior: 'smooth',
-      });
-    }
-  };
 
   return (
     <section
@@ -72,7 +61,13 @@ export const HeroSection: React.FC<HeroSectionProps> = () => {
           <div className="mt-7 sm:mt-8 flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={scrollToProjects}
+              onClick={() => {
+                const el = document.getElementById('projects');
+                if (el) {
+                  const top = el.getBoundingClientRect().top + window.scrollY - 84;
+                  window.scrollTo({ top, behavior: 'smooth' });
+                }
+              }}
               className="inline-flex min-h-12 items-center justify-center gap-2.5 rounded-full bg-[#9F7AEA] px-6 sm:px-7 py-3 text-[14px] sm:text-[15px] font-semibold text-white transition-colors duration-200 hover:bg-[#8B5CF6] shadow-lg shadow-purple-950/20 active:scale-[0.98] cursor-pointer"
             >
               Explore my work
