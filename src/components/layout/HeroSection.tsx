@@ -43,17 +43,17 @@ export const HeroSection: React.FC<HeroSectionProps> = () => {
       <div className="container-main relative z-10 mx-auto w-full min-h-[100dvh] flex flex-col justify-center pt-24 pb-12 sm:pt-28 md:pt-0 items-start px-4 sm:px-6">
         <div className="w-full max-w-[560px] lg:max-w-[620px]">
           {/* Main Heading */}
-          <h1 className="font-display font-black tracking-tight text-neutral-50 text-[32px] xs:text-[40px] sm:text-5xl md:text-5xl lg:text-6xl leading-[1.06]">
+          <h1 className="font-display font-black tracking-tight text-neutral-50 text-[38px] xs:text-[46px] sm:text-5xl md:text-6xl lg:text-7xl leading-[1.06]">
             Hey, I’m Abhinand.
           </h1>
 
           {/* Subtitle */}
-          <p className="mt-4 font-display font-semibold text-neutral-100 text-[18px] xs:text-[20px] sm:text-2xl md:text-[22px] lg:text-[26px] leading-[1.3] max-w-[460px]">
+          <p className="mt-4 font-display font-semibold text-neutral-100 text-[20px] xs:text-[22px] sm:text-2xl md:text-[24px] lg:text-[28px] leading-[1.3] max-w-[480px]">
             Software developer building web & mobile applications.
           </p>
 
           {/* Body Description */}
-          <p className="mt-3 sm:mt-4 text-neutral-300 sm:text-neutral-400 text-[15px] sm:text-base md:text-[17px] leading-[1.6] max-w-[480px]">
+          <p className="mt-3 sm:mt-4 text-neutral-300 sm:text-neutral-400 text-[17px] sm:text-[18px] md:text-[19px] leading-[1.65] max-w-[500px]">
             I enjoy turning ideas into simple, reliable products that feel good to use.
           </p>
 
