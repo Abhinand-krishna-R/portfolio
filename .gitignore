@@ -26,5 +26,4 @@ dist-ssr
 *.sw?
 
 # Generated files from build/sync
-src/generated/
 .sync-manifest.json

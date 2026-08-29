@@ -1,0 +1,300 @@
+{
+  "serenityspace": {
+    "title": "SerenitySpace",
+    "tagline": "Secure, real-time care coordination between therapists and patients.",
+    "description": "A Flutter and Firebase-based platform connecting therapists, patients, and admins through real-time chat and conflict-aware appointment booking, with strict data isolation between every role.",
+    "platform": "Mental Health Platform · Flutter, Dart, Firebase",
+    "role": "Solo Mobile Architect",
+    "timeline": "2 Months (Independent)",
+    "technologies": [
+      "Flutter",
+      "Dart",
+      "Firebase Auth",
+      "Cloud Firestore",
+      "FCM"
+    ],
+    "problem": "Mental health tools are often expensive, poorly structured for scheduling, or fail to isolate sensitive patient data between roles. The goal was to build a production-quality platform where therapists, patients, and admins each operate in a fully isolated data space.",
+    "goals": [
+      "Enforce strict multi-tenant data isolation across 6+ Firestore collections using granular security rules.",
+      "Implement real-time chat using Firestore stream listeners with an offline-first message queue.",
+      "Build a conflict-aware appointment system that detects and blocks overlapping session bookings.",
+      "Deliver FCM push notifications for new messages and upcoming appointments.",
+      "Decouple all Firestore access behind a Repository layer, keeping ViewModels testable without Firebase."
+    ],
+    "architecture": "Follows a strict MVC + Repository pattern. Flutter widgets (View) subscribe to Provider-based ViewModels (Controller), which never touch Firestore directly — all data access is delegated to a FirestoreService Repository layer (Model). This boundary keeps business logic independently testable. Firestore offline persistence is enabled globally so stream listeners serve cached data during disconnection, and writes are queued by the SDK automatically.",
+    "databaseDesign": "/users/{userId}\n  name: String\n  email: String\n  role: 'patient' | 'therapist' | 'admin'\n\n/chats/{chatId}\n  participantIds: String[]\n  lastMessage: String\n  lastTimestamp: Timestamp\n\n/chats/{chatId}/messages/{msgId}\n  senderId: String\n  content: String\n  timestamp: Timestamp\n  status: 'sent' | 'delivered'\n\n/appointments/{appId}\n  therapistId: String\n  patientId: String\n  startTime: Timestamp\n  endTime: Timestamp\n  status: 'pending' | 'confirmed' | 'cancelled'",
+    "codeHighlights": [
+      {
+        "title": "Role-Based Firestore Security Rules",
+        "description": "Each collection enforces a separate access predicate — participants can only read chats they belong to, and only therapists can write to appointments.",
+        "language": "Firebase Security Rules",
+        "code": "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /users/{userId} {\n      allow read, write: if request.auth.uid == userId;\n    }\n    match /chats/{chatId} {\n      allow read: if request.auth.uid in resource.data.participantIds;\n      match /messages/{msgId} {\n        allow read: if request.auth.uid in\n          get(/databases/$(database)/documents/chats/$(chatId))\n            .data.participantIds;\n        allow create: if request.auth.uid == request.resource.data.senderId;\n      }\n    }\n    match /appointments/{appId} {\n      allow read: if request.auth.uid == resource.data.therapistId\n                  || request.auth.uid == resource.data.patientId;\n      allow write: if request.auth.uid == resource.data.therapistId;\n    }\n  }\n}"
+      },
+      {
+        "title": "Offline-First Message Queue (Dart)",
+        "description": "Messages are inserted optimistically with a local ID and 'sending' status before the Firestore write confirms, so the UI never blocks on network latency.",
+        "language": "Dart",
+        "code": "Future<void> sendMessage(String chatId, String text) async {\n  final localId = const Uuid().v4();\n\n  // Optimistic insert — visible in UI immediately\n  _pending[localId] = Message(\n    id: localId,\n    senderId: _auth.uid,\n    text: text,\n    timestamp: DateTime.now(),\n    status: Status.sending,\n  );\n  notifyListeners();\n\n  try {\n    // Firestore SDK queues this automatically when offline\n    await _db.collection('chats/$chatId/messages').add({\n      'senderId': _auth.uid,\n      'text': text,\n      'timestamp': FieldValue.serverTimestamp(),\n    });\n    _pending[localId] = _pending[localId]!.copyWith(status: Status.sent);\n  } catch (_) {\n    _pending[localId] = _pending[localId]!.copyWith(status: Status.failed);\n  }\n  notifyListeners();\n}"
+      },
+      {
+        "title": "Conflict-Aware Appointment Booking (Dart)",
+        "description": "Before confirming any booking, the service fetches existing confirmed appointments for the therapist and checks for time-range overlap using the standard interval intersection condition.",
+        "language": "Dart",
+        "code": "Future<bool> hasConflict(\n    String therapistId, DateTime start, DateTime end) async {\n  final snap = await _db\n      .collection('appointments')\n      .where('therapistId', isEqualTo: therapistId)\n      .where('status', isEqualTo: 'confirmed')\n      .get();\n\n  return snap.docs.any((doc) {\n    final s = (doc['startTime'] as Timestamp).toDate();\n    final e = (doc['endTime'] as Timestamp).toDate();\n    // Two intervals overlap when: newStart < existEnd AND newEnd > existStart\n    return start.isBefore(e) && end.isAfter(s);\n  });\n}"
+      }
+    ],
+    "keyFeatures": [
+      "Real-time chat via Firestore stream listeners with local optimistic message states",
+      "Appointment booking with server-side conflict and overlap detection before confirmation",
+      "FCM push notifications for new messages and session reminders",
+      "Firestore security rules enforcing complete data isolation across 6+ collections",
+      "Provider-based reactive state with ViewModel layer decoupled from all Firestore calls"
+    ],
+    "challenges": [
+      {
+        "challenge": "Messages Rendering Out of Order During Poor Connectivity",
+        "solution": "Queued messages locally with a UUID-stamped 'sending' state before the Firestore write. The SDK's offline queue handles delivery, and the UI merges the pending map with the live stream — so order is always determined by local timestamp, not server arrival."
+      },
+      {
+        "challenge": "Enforcing Data Isolation Across Three Distinct User Roles",
+        "solution": "Wrote granular Firestore security rules for every collection — using get() calls to cross-reference participantIds on chat subcollection reads. Tested each rule in the Firebase emulator against all three role types before production deployment."
+      }
+    ],
+    "lessonsLearned": [
+      "Firestore security rules should be written and tested in the emulator before any live data exists — retrofitting rules onto live collections is error-prone.",
+      "Provider's ChangeNotifier works best when ViewModels expose only transformed, UI-ready state — raw Firestore snapshots should never reach the widget tree.",
+      "Offline-first design means writing as if the network never exists and letting the SDK prove otherwise, not the reverse.",
+      "Interval overlap detection (start < otherEnd && end > otherStart) is the single correct condition — any simpler check produces false negatives."
+    ],
+    "futureWork": [
+      "Replace Provider with Riverpod for better scoped state and compile-time safety.",
+      "Add end-to-end message encryption using a key-exchange flow before Firestore writes.",
+      "Introduce therapist availability calendar so patients can self-book open slots."
+    ],
+    "apkUrl": "https://github.com/Abhinand-krishna-R/SerenitySpace/releases",
+    "liveDemo": "#",
+    "mockupImage": "/assets/serenityspace_mockup.png",
+    "screenshots": [
+      "ss1",
+      "ss2",
+      "ss3"
+    ],
+    "banner": "banner.webp"
+  },
+  "skillsync": {
+    "title": "SkillSync",
+    "tagline": "Matching candidates to roles through structured compatibility scoring.",
+    "description": "A two-sided platform with separate flows for job seekers and employers, using a compatibility scoring system to surface relevant matches and track applications end-to-end.",
+    "platform": "Career-Readiness Platform · Flutter, Dart, Firebase",
+    "role": "Flutter Developer Intern",
+    "timeline": "3 Weeks",
+    "technologies": [
+      "Flutter",
+      "Dart",
+      "Firebase Auth",
+      "Cloud Firestore"
+    ],
+    "problem": "Manually matching candidates to job openings is slow for recruiters and opaque for candidates. The platform needed a scoring engine that could rank jobs by genuine skill alignment, not just keyword presence, while staying within Firestore's NoSQL query constraints.",
+    "goals": [
+      "Build a two-sided platform with completely separate navigation flows for candidates and employers.",
+      "Implement a compatibility scoring engine across 10+ skill categories, decoupled from any UI code.",
+      "Design Firestore collections so match scores can be written and queried without expensive full-table reads.",
+      "Track the full application lifecycle — submitted, viewed, shortlisted, rejected — from a single dashboard.",
+      "Use a composite index strategy to work around Firestore's single arrayContains query limitation."
+    ],
+    "architecture": "Organized into three domain-separated service layers: ProfileService, JobService, and MatchingService. The MatchingService is entirely pure — it takes candidate skills and job requirements as plain Dart lists and returns a double score, with zero Firebase imports. This keeps the scoring logic independently unit-testable. A CompatibilityViewModel sits above the services, caches the last ranked result list, and exposes it to the UI via a dirty-flag pattern that prevents redundant re-scoring on widget rebuild.",
+    "databaseDesign": "/jobs/{jobId}\n  title: String\n  description: String\n  requiredSkills: String[]\n  recruiterId: String\n  isActive: Boolean\n  postedAt: Timestamp\n\n/candidates/{candidateId}\n  name: String\n  email: String\n  skills: String[]\n  experienceYears: Number\n\n/applications/{appId}\n  jobId: String\n  candidateId: String\n  status: 'submitted' | 'viewed' | 'shortlisted' | 'rejected'\n  matchScore: Number\n  appliedAt: Timestamp",
+    "codeHighlights": [
+      {
+        "title": "Compatibility Scoring Engine (Dart)",
+        "description": "A pure function that computes a 0–100 match score by intersecting job requirements against candidate skills — no Firebase dependency, fully unit-testable.",
+        "language": "Dart",
+        "code": "// Pure scoring function — no Firebase dependency\ndouble scoreMatch(List<String> required, List<String> candidate) {\n  if (required.isEmpty) return 0.0;\n  final owned = candidate.map((s) => s.toLowerCase()).toSet();\n  final hits  = required.where((s) => owned.contains(s.toLowerCase())).length;\n  return (hits / required.length) * 100.0;\n}\n\n// Rank all active jobs for a candidate, highest score first\nFuture<List<JobMatch>> rankForCandidate(String candidateId) async {\n  final profile = await _profiles.get(candidateId);\n  final jobs    = await _jobs.getAll();\n  return jobs\n      .map((j) => JobMatch(job: j,\n            score: scoreMatch(j.requiredSkills, profile.skills)))\n      .where((m) => m.score > 0)\n      .toList()\n    ..sort((a, b) => b.score.compareTo(a.score));\n}"
+      },
+      {
+        "title": "Composite Index + Client-Side Filter Strategy (Dart)",
+        "description": "Firestore only allows one arrayContains per query. The solution narrows results server-side on the primary skill, then applies remaining skill checks client-side after the fetch.",
+        "language": "Dart",
+        "code": "// Firestore limitation: only ONE arrayContains allowed per query.\n// Strategy: server narrows on the first skill, client filters the rest.\nFuture<List<Job>> fetchMatchingJobs(List<String> skills) async {\n  final snap = await _db\n      .collection('jobs')\n      .where('requiredSkills', arrayContains: skills.first)\n      .where('isActive', isEqualTo: true)\n      .get();\n\n  // Client-side pass: apply remaining skill requirements\n  return snap.docs\n      .map(Job.fromDoc)\n      .where((job) => skills.skip(1).every((skill) =>\n          job.requiredSkills\n              .map((r) => r.toLowerCase())\n              .contains(skill.toLowerCase())))\n      .toList();\n}"
+      }
+    ],
+    "keyFeatures": [
+      "Compatibility scoring engine across 10+ skill categories, zero Firebase dependency",
+      "Separate, purpose-built navigation flows for candidates and employers",
+      "Application lifecycle tracking: submitted → viewed → shortlisted → rejected",
+      "Composite Firestore index strategy with client-side secondary filtering",
+      "Dirty-flag ViewModel caching to prevent redundant match rescoring on rebuild"
+    ],
+    "challenges": [
+      {
+        "challenge": "Multi-Skill Filtering Within Firestore's Query Constraints",
+        "solution": "Firestore's arrayContains is limited to one field per query. Solved by building a composite Firestore index on the primary skill and isActive fields for server-side narrowing, then applying all remaining skill checks as a client-side where filter on the smaller returned set."
+      },
+      {
+        "challenge": "Keeping the Scoring Engine Decoupled from Firebase",
+        "solution": "MatchingService was written as a pure Dart class with no Firebase imports — it only consumes plain Dart objects (Job, CandidateProfile). Firebase calls happen in separate service classes before data reaches MatchingService, which made the scoring algorithm independently unit-testable without mocking Firebase."
+      }
+    ],
+    "lessonsLearned": [
+      "NoSQL query constraints should be designed around upfront — adding arrayContains filters after the schema is live requires index rebuilds and data migration.",
+      "Pure service layers with no external dependencies are the easiest things to unit test and the most valuable things to get right early.",
+      "Client-side filtering after a server-side narrowing query is a legitimate and efficient pattern when the server cannot express the full predicate.",
+      "A dirty-flag cache on ViewModels meaningfully reduces Firestore reads when users navigate between screens quickly."
+    ],
+    "futureWork": [
+      "Move the scoring computation to a Firebase Cloud Function so scores are pre-calculated and stored on the application document.",
+      "Add a recommendation feed that surfaces jobs the candidate has not yet applied to, ranked by score.",
+      "Implement recruiter-side analytics: applicant skill distribution charts per job post."
+    ],
+    "apkUrl": "https://github.com/Abhinand-krishna-R/SkillSync/releases",
+    "liveDemo": "#",
+    "mockupImage": "/assets/skillsync/score.jpg",
+    "screenshots": [
+      "ss1",
+      "ss2"
+    ],
+    "banner": "banner.webp"
+  },
+  "3d-air-sculpting": {
+    "title": "3D Air Sculpting",
+    "tagline": "Extending AirDrawing into three dimensions using a single webcam.",
+    "description": "An extension of AirDrawing that estimates virtual depth from hand distance to a single webcam, allowing gestures to shape and manipulate a 3D digital sculpture rather than a flat canvas.",
+    "platform": "Gesture-Controlled 3D Modeling · Python, OpenCV, MediaPipe",
+    "role": "Independent Developer",
+    "timeline": "1 Month",
+    "technologies": [
+      "Python",
+      "OpenCV",
+      "MediaPipe"
+    ],
+    "problem": "Traditional 3D modeling requires specialized hardware (depth cameras, VR controllers) or complex keyboard-mouse controls. The goal was to extend 2D gesture-drawing into 3D sculpting using a standard monocular webcam, resolving depth/z-distance from a 2D image feed in real time.",
+    "goals": [
+      "Estimate relative z-depth coordinate dynamically using the scale ratio of hand landmark skeletons.",
+      "Extend the gesture vocabulary to control 3D viewport rotations and brush depth modulation.",
+      "Render high-performance 3D coordinates in a PyOpenGL / PyGame environment without blocking hand tracking.",
+      "Keep depth scaling consistent and intuitive across different users' physical hand sizes."
+    ],
+    "architecture": "An extension of AirDrawing's architecture. It uses the same decoupled CameraThread pattern to isolate OpenCV acquisition. The gesture detection pipeline runs MediaPipe hand landmarks, calculates depth (Z) by comparing current hand bounding box / landmark dimensions against a reference baseline configuration, and sends the 3D vectors to a separate PyOpenGL window thread. This multi-process/multi-thread division prevents OpenGL buffer swaps from blocking the real-time visual tracking system.",
+    "databaseDesign": "",
+    "codeHighlights": [
+      {
+        "title": "Monocular Depth Estimation via Landmark Ratio (Python)",
+        "description": "Calculates the z-coordinate by measuring the Euclidean distance between wrist and index-finger knuckle (mcp), comparing it to a reference width. Distance is inversely proportional to this scale.",
+        "language": "Python",
+        "code": "import math\n\ndef estimate_depth(landmarks, reference_pixel_width=100.0, focal_constant=500.0):\n    # Wrist (0) and Index MCP (5) serve as our hand size scale indicator\n    wrist = landmarks[0]\n    index_mcp = landmarks[5]\n    \n    # Calculate pixel distance between these landmarks\n    dx = (wrist.x - index_mcp.x) * 640 # Frame width scaling\n    dy = (wrist.y - index_mcp.y) * 480 # Frame height scaling\n    pixel_width = math.sqrt(dx*dx + dy*dy)\n    \n    if pixel_width == 0:\n        return 1.0\n    \n    # Z distance is inversely proportional to pixel size\n    # Nearer hand = larger pixel width = smaller Z (closer to camera)\n    z_distance = (reference_pixel_width * focal_constant) / pixel_width\n    return z_distance"
+      },
+      {
+        "title": "3D Point Addition & Brush Scale (Python)",
+        "description": "Appends the computed X, Y, and estimated Z coordinates into a vertex array when the draw gesture is confirmed, scaling coordinate bounds to match OpenGL's viewport.",
+        "language": "Python",
+        "code": "def process_3d_drawing(x, y, z_distance, is_drawing, canvas_points):\n    if not is_drawing:\n        return\n    \n    # Normalize X and Y to [-1.0, 1.0] for OpenGL coordinate space\n    gl_x = (x / 640.0) * 2.0 - 1.0\n    gl_y = (1.0 - (y / 480.0)) * 2.0 - 1.0 # Invert Y axis\n    \n    # Map z_distance to a suitable gl_z depth plane range\n    # e.g., mapping depth 40cm-80cm to gl_z [-1.0, 1.0]\n    gl_z = -((z_distance - 40.0) / 40.0) * 2.0 + 1.0\n    gl_z = max(-1.0, min(1.0, gl_z)) # Clamp depth bounds\n    \n    # Append to OpenGL coordinate vertex list\n    canvas_points.append((gl_x, gl_y, gl_z))"
+      }
+    ],
+    "keyFeatures": [
+      "Real-time monocular depth (Z) estimation from hand landmark distance ratio comparisons",
+      "Extended 3D gesture controls including dynamic viewport rotation and brush depth styling",
+      "PyOpenGL integration rendering coordinate vertices and shapes inside a 3D canvas viewport",
+      "Calibrated scale baseline mapping relative movements to virtual coordinates comfortably"
+    ],
+    "challenges": [
+      {
+        "challenge": "Depth Estimation Noise and Scale Variations Between Users",
+        "solution": "Implemented a quick startup calibration phase. The application measures the user's hand at a fixed, comfortable distance for 2 seconds to establish the baseline pixel width, standardizing relative depth calculation for different hand scales."
+      },
+      {
+        "challenge": "PyOpenGL Threading Conflict with OpenCV GUI",
+        "solution": "Encapsulated PyOpenGL rendering and hand processing into two separate processes using Python's multiprocessing module, communicating point data via a synchronized multiprocessing.Queue. This prevented OpenGL context errors and frame stutter."
+      }
+    ],
+    "lessonsLearned": [
+      "Monocular depth estimation works well for relative movement and spatial sculpting interface feedback, even without absolute physical accuracy.",
+      "Multiprocessing is superior to multithreading in Python when dealing with CPU-bound computer vision models and GPU-bound OpenGL rendering contexts.",
+      "A calibration step at launch dramatically improves UX, adjusting model scales dynamically to fit the user's comfort zone."
+    ],
+    "futureWork": [
+      "Integrate a 3D mesh reconstruction algorithm (e.g. marching cubes) to convert raw drawn point clouds into solid exportable meshes.",
+      "Add support for virtual VR headset orientation tracking via mobile gyroscope links.",
+      "Implement OBJ/STL file export format options for direct 3D printing support."
+    ],
+    "apkUrl": "#",
+    "liveDemo": "#",
+    "mockupImage": "/assets/sculpting_mockup.png",
+    "screenshots": [
+      "ss1"
+    ],
+    "banner": "banner.webp"
+  },
+  "airdrawing": {
+    "title": "AirDrawing",
+    "tagline": "A virtual canvas controlled entirely by hand movement.",
+    "description": "A gesture-controlled canvas using MediaPipe's hand-tracking to interpret finger position and gestures in real time, translating hand movement directly into on-screen drawing.",
+    "platform": "Gesture-Controlled Drawing Tool · Python, OpenCV, MediaPipe",
+    "role": "Independent Developer",
+    "timeline": "1 Month",
+    "technologies": [
+      "Python",
+      "OpenCV",
+      "MediaPipe",
+      "NumPy"
+    ],
+    "problem": "Traditional drawing interfaces require a mouse or touchscreen. The challenge was to build a natural, zero-hardware drawing experience using only a standard webcam — with no perceptible lag and stable enough tracking to feel like a real tool rather than a demo.",
+    "goals": [
+      "Achieve smooth finger tracking at 30+ FPS on standard consumer webcams with no dedicated GPU.",
+      "Implement four reliable gesture recognitions — draw, erase, color select, clear — using only finger landmark positions.",
+      "Decouple camera capture from canvas rendering so gesture inference latency cannot drop the frame rate.",
+      "Apply a moving average smoother to tracked coordinates to eliminate webcam noise jitter before rendering.",
+      "Keep the canvas as a NumPy array overlay blended directly onto the video frame for efficient real-time compositing."
+    ],
+    "architecture": "Two concurrent processes: a CameraThread runs on a background daemon thread, continuously reading frames from the webcam into a bounded queue (maxsize=2) and discarding the oldest frame when full — this guarantees the render loop always gets the freshest frame without accumulating latency. The main render loop dequeues frames, runs MediaPipe hand inference, smooths the index-finger tip coordinates through a 5-point moving average buffer, classifies the resulting gesture, updates the NumPy canvas overlay, and composites the result — all within one tick. Separating capture from render prevents inference time from starving the display.",
+    "databaseDesign": "",
+    "codeHighlights": [
+      {
+        "title": "Gesture Classification via Landmark Positions (Python)",
+        "description": "A finger is classified as raised when its tip Y coordinate is above its PIP joint Y coordinate — smaller Y = higher on screen in image space. Four combinations map to four distinct actions.",
+        "language": "Python",
+        "code": "import mediapipe as mp\n\nL = mp.solutions.hands.HandLandmark\n\ndef classify_gesture(lm):\n    # In image space: smaller Y = higher on screen\n    index_up  = lm[L.INDEX_FINGER_TIP].y  < lm[L.INDEX_FINGER_PIP].y\n    middle_up = lm[L.MIDDLE_FINGER_TIP].y < lm[L.MIDDLE_FINGER_PIP].y\n    ring_up   = lm[L.RING_FINGER_TIP].y   < lm[L.RING_FINGER_PIP].y\n    pinky_up  = lm[L.PINKY_TIP].y         < lm[L.PINKY_PIP].y\n\n    if index_up and not middle_up and not ring_up and not pinky_up:\n        return 'draw'         # Only index raised\n    if index_up and middle_up and not ring_up and not pinky_up:\n        return 'erase'        # Index + middle raised\n    if not any([index_up, middle_up, ring_up, pinky_up]):\n        return 'clear'        # All fingers closed (fist)\n    return 'idle'"
+      },
+      {
+        "title": "Decoupled Camera Thread + Moving Average Smoother (Python)",
+        "description": "The camera thread drops stale frames so the render loop never blocks waiting for capture, and the Smoother eliminates coordinate noise by averaging over a rolling window of recent positions.",
+        "language": "Python",
+        "code": "from collections import deque\nimport threading, queue, cv2, numpy as np\n\nclass Smoother:\n    def __init__(self, n=5):\n        self.xs, self.ys = deque(maxlen=n), deque(maxlen=n)\n    def smooth(self, x, y):\n        self.xs.append(x); self.ys.append(y)\n        return int(np.mean(self.xs)), int(np.mean(self.ys))\n\nclass CameraThread(threading.Thread):\n    def __init__(self, src=0):\n        super().__init__(daemon=True)\n        self.cap = cv2.VideoCapture(src)\n        self._q  = queue.Queue(maxsize=2)\n    def run(self): \n        while True:\n            ok, frame = self.cap.read()\n            if ok:\n                if self._q.full():          # Drop oldest — stay current\n                    try: self._q.get_nowait()\n                    except queue.Empty: pass\n                self._q.put(frame)\n    def read(self): return self._q.get(timeout=1.0)"
+      }
+    ],
+    "keyFeatures": [
+      "Smooth index-finger tracking at 30+ FPS on standard webcams via MediaPipe's 21-point hand skeleton",
+      "Four gesture actions — draw, erase, color select, clear — classified purely from landmark Y positions",
+      "Decoupled CameraThread with a bounded frame queue so capture latency never impacts render rate",
+      "5-point moving average smoother to eliminate webcam noise before coordinates reach the canvas",
+      "NumPy array canvas overlay blended onto the live video frame for zero-copy real-time compositing"
+    ],
+    "challenges": [
+      {
+        "challenge": "Visible Stutter From Running Capture and Inference on a Single Thread",
+        "solution": "Moved camera capture onto a background daemon thread writing into a bounded queue. When the queue is full it discards the oldest frame rather than blocking, ensuring the render loop always processes the most recent frame with minimal accumulated latency."
+      },
+      {
+        "challenge": "Stroke Jitter From Webcam Coordinate Noise",
+        "solution": "Applied a 5-point moving average filter over the index-finger tip's (x, y) pixel coordinates. Each render tick averages the last five sampled positions, smoothing out noise spikes without introducing enough delay to make the input feel sluggish."
+      }
+    ],
+    "lessonsLearned": [
+      "MediaPipe's 21-point hand skeleton gives reliable per-finger state using only Y-axis tip-vs-PIP comparison — no complex angle calculations needed for basic gesture classification.",
+      "A bounded queue with frame-dropping is the correct pattern for real-time video pipelines — backpressure from blocking queues accumulates into visible lag faster than any other source.",
+      "A NumPy array as the canvas state is both the simplest and most performant approach — OpenCV's addWeighted blends it onto the video frame in a single vectorized operation.",
+      "The moving average window size is a tunable tradeoff: larger window = smoother strokes but more input lag. Five samples at 30 FPS gives ~167 ms of smoothing, which felt natural in testing."
+    ],
+    "futureWork": [
+      "Add a color palette overlay that the user can select by hovering the index finger over a screen region.",
+      "Implement stroke undo using a gesture (e.g. thumb-index pinch) that pops the last recorded stroke.",
+      "Export the current canvas as a PNG using a dedicated save gesture."
+    ],
+    "apkUrl": "#",
+    "liveDemo": "#",
+    "mockupImage": "/assets/airdrawing_mockup.png",
+    "screenshots": [
+      "ss1"
+    ],
+    "banner": "banner.webp"
+  }
+}

@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite",
     "sync": "tsx scripts/sync-project-assets.ts",
-    "prebuild": "npm run sync",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"
